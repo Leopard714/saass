@@ -1,0 +1,442 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          UserRole  @default(CLIENTE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  resetToken       String?   @unique
+  resetTokenExpiry DateTime?
+
+  accounts Account[]
+  sessions Session[]
+  reviews  Review[]
+
+  // One-to-one relationships with business profiles
+  staff    Staff?    // If role=STAFF, MUST exist
+  customer Customer? // If role=CLIENTE, MUST exist
+
+  // Notification preferences
+  notificationPreferences NotificationPreferences?
+
+  @@index([email])
+  @@index([role])
+}
+
+model NotificationPreferences {
+  id                  String  @id @default(cuid())
+  userId              String  @unique
+  emailReminders      Boolean @default(true)
+  reminderTime        String  @default("24h") // "24h" | "48h" | "1week"
+  promotionalEmails   Boolean @default(false)
+  appointmentUpdates  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum UserRole {
+  ADMIN
+  STAFF
+  CLIENTE
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model SalonConfig {
+  id   String @id @default("salon_config")
+  name String @default("Beauty Salon")
+  logo String?
+
+  // Branding colors
+  primaryColor   String @default("#000000")
+  secondaryColor String @default("#ffffff")
+  accentColor    String @default("#d4af37")
+
+  // Contact
+  email   String?
+  phone   String?
+  address String?
+  city    String?
+  state   String?
+  zipCode String?
+  country String @default("US")
+
+  // Business hours
+  timezone String @default("America/New_York")
+  currency String @default("USD")
+  locale   String @default("en")
+
+  // Booking settings
+  bookingDeposit     Decimal @default(50.00) @db.Decimal(10, 2)
+  depositRefundable  Boolean @default(false)
+  minBookingAdvance  Int     @default(24) // hours
+  maxBookingAdvance  Int     @default(30) // days
+  cancellationPolicy String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Category {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  services Service[]
+  products Product[]
+
+  @@index([slug])
+}
+
+model Service {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique // For SEO-friendly URLs: /services/haircut-styling
+  description String? @db.Text
+  duration    Int // minutes
+  price       Decimal @db.Decimal(10, 2)
+  imageUrl    String? // Cloudinary Public ID (e.g. "services_haircut_ksqpaa")
+  isActive    Boolean @default(true)
+  isFeatured  Boolean @default(false) // Display on landing page
+  order       Int     @default(0) // Order of featured services (lower = first)
+
+  categoryId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category            Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  appointmentServices AppointmentService[]
+  staffServices       StaffService[]
+  reviews             Review[]
+  gallery             ServiceGallery[]
+  faqs                ServiceFAQ[]
+
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([isFeatured])
+  @@index([slug])
+}
+
+// Service Reviews/Testimonials
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int // 1-5 stars
+  comment   String   @db.Text
+  serviceId String
+  userId    String
+  isActive  Boolean  @default(true) // For moderation
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@index([userId])
+  @@index([isActive])
+}
+
+// Service Gallery (before/after photos)
+model ServiceGallery {
+  id        String   @id @default(cuid())
+  imageUrl  String // Cloudinary Public ID
+  caption   String?
+  order     Int      @default(0)
+  serviceId String
+  createdAt DateTime @default(now())
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+}
+
+// Service FAQs
+model ServiceFAQ {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String   @db.Text
+  order     Int      @default(0)
+  serviceId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+}
+
+model Staff {
+  id       String  @id @default(cuid())
+  name     String
+  email    String?
+  phone    String?
+  bio      String? @db.Text
+  image    String?
+  isActive Boolean @default(true)
+
+  // REQUIRED one-to-one relationship with User (all staff can login)
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  services     StaffService[]
+  appointments Appointment[]
+  workingHours WorkingHours[]
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([email])
+}
+
+model StaffService {
+  id        String @id @default(cuid())
+  staffId   String
+  serviceId String
+
+  staff   Staff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, serviceId])
+  @@index([staffId])
+  @@index([serviceId])
+}
+
+model WorkingHours {
+  id        String  @id @default(cuid())
+  staffId   String
+  dayOfWeek Int // 0-6 (Sunday-Saturday)
+  startTime String // "09:00"
+  endTime   String // "17:00"
+  isActive  Boolean @default(true)
+
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, dayOfWeek])
+  @@index([staffId])
+}
+
+model Customer {
+  id    String  @id @default(cuid())
+  name  String
+  email String?
+  phone String?
+  notes String? @db.Text
+
+  // OPTIONAL one-to-one relationship with User
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointments Appointment[]
+  orders       Order[]
+
+  @@index([userId])
+  @@index([email])
+  @@index([phone])
+}
+
+model Appointment {
+  id         String            @id @default(cuid())
+  staffId    String
+  customerId String?
+
+  // Walk-in customer without registered Customer
+  guestName  String?
+  guestEmail String?
+  guestPhone String?
+
+  startTime DateTime
+  endTime   DateTime
+  status    AppointmentStatus @default(PENDING)
+  notes     String? @db.Text
+
+  // Payment ($50 non-refundable deposit)
+  totalPrice      Decimal @db.Decimal(10, 2)
+  depositAmount   Decimal @default(50.00) @db.Decimal(10, 2)
+  depositPaid     Boolean @default(false)
+  stripePaymentId String?
+
+  // Notifications
+  reminderSentAt     DateTime?
+  confirmationSentAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff    Staff                @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  customer Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  services AppointmentService[]
+
+  @@index([staffId])
+  @@index([customerId])
+  @@index([startTime])
+  @@index([status])
+  @@index([depositPaid])
+}
+
+model AppointmentService {
+  id            String @id @default(cuid())
+  appointmentId String
+  serviceId     String
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service     Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@unique([appointmentId, serviceId])
+  @@index([appointmentId])
+  @@index([serviceId])
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?  @db.Text
+  price          Decimal  @db.Decimal(10, 2)
+  compareAtPrice Decimal? @db.Decimal(10, 2)
+  sku            String?  @unique
+
+  // Inventory
+  trackInventory Boolean @default(true)
+  stockQuantity  Int     @default(0)
+
+  // Images
+  images String[]
+
+  // Category
+  categoryId String?
+
+  isActive   Boolean @default(true)
+  isFeatured Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category   Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  orderItems OrderItem[]
+
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([isFeatured])
+  @@index([sku])
+}
+
+model Order {
+  id         String  @id @default(cuid())
+  customerId String?
+
+  // Guest checkout without registered Customer
+  guestName  String?
+  guestEmail String?
+  guestPhone String?
+
+  // Totals (in-store pickup only, no shipping)
+  subtotal Decimal @db.Decimal(10, 2)
+  tax      Decimal @default(0) @db.Decimal(10, 2)
+  total    Decimal @db.Decimal(10, 2)
+
+  status OrderStatus @default(PENDING)
+
+  // Payment
+  stripePaymentIntentId String?
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items    OrderItem[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Decimal @db.Decimal(10, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  COMPLETED  // Entregado en tienda
+  CANCELLED
+  REFUNDED
+}
